@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copier les fichiers package.json et package-lock.json
-COPY backend/package*.json ./
+COPY package*.json ./
 
 # Installer les dépendances Node.js
 RUN npm install
 
 # Copier le reste de l'application
-COPY backend/ ./
+COPY . ./
 
 # ---------- Étape 3 : installer les dépendances Python ----------
 RUN python3 -m venv /venv
