@@ -18,6 +18,7 @@ import { RetrievalQAChain } from "langchain/chains";
 import { execFile } from "child_process";
 import fs from "fs";
 import XLSX from "xlsx";
+import bodyParser from "body-parser";
 
 // ---------- Multer setup ----------
 //
@@ -108,19 +109,54 @@ async function main() {
   await initRAG();
   const app = express();
   app.use(cors());
-  // app.use(bodyParser.json());
+  app.use(bodyParser.json());
+  app.use(express.json());
 
   // RAG endpoint
+  /**
+   * Endpoint POST /ask
+   * Attend { question } dans le body.
+   * Retourne { response: ... }
+   */
   app.post("/ask", async (req, res) => {
     try {
       const { question } = req.body;
-      if (!question)
+      console.log("body", req);
+      if (!question) {
         return res.status(400).json({ error: "question manquante" });
-      const result = await ragChain.invoke({ query: question });
-      res.json({ response: result.text });
+      }
+
+      // Appel IA
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+      });
+
+      const model = "gemma-3-27b-it";
+
+      const prompt = `Tu es un expert en finances publiques. Réponds de façon brève et claire à la question suivante concernant des données budgétaires (lois de finances) :\n\nQuestion : ${question}\nRéponse :`;
+
+      const contents = [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ];
+
+      const responseStream = await ai.models.generateContentStream({
+        model,
+        config: {},
+        contents,
+      });
+
+      let responseText = "";
+      for await (const chunk of responseStream) {
+        if (chunk.text) responseText += chunk.text;
+      }
+
+      res.json({ response: responseText.trim() });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Erreur serveur" });
+      res.status(500).json({ error: "Erreur serveur ou IA" });
     }
   });
 
@@ -152,7 +188,7 @@ async function main() {
             forecast: data,
             interpretation,
           });
-          res.json(data);
+          // res.json(data);
         } catch (e) {
           console.error(e);
           res.status(500).json({ error: "Erreur parsing JSON Python" });
@@ -197,7 +233,7 @@ ${forecastData.forecast_national
       role: "user",
       parts: [
         {
-          text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire pour un responsable de budget.
+          text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire est tu doit etre bref pour un responsable de budget.
 
 ${contextText}`,
         },
