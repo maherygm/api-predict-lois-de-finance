@@ -172,6 +172,8 @@ async function interpretForecast(forecastData) {
     apiKey: process.env.GEMINI_API_KEY, // Assure-toi que cette variable est bien définie
   });
 
+  console.log("error ", forecastData);
+
   const model = "gemma-3-27b-it";
 
   // Préparer le contexte textuel
