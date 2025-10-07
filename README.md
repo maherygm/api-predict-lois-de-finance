@@ -1,6 +1,5 @@
 # api-predict-lois-de-finance
 
-backend/
 ├── package.json
 ├── rag-server.js
 ├── services/
