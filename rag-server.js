@@ -18,6 +18,8 @@ import { RetrievalQAChain } from "langchain/chains";
 import { execFile } from "child_process";
 import fs from "fs";
 import XLSX from "xlsx";
+import { generatePodcastAudio } from "./services/js/podCastGenerator";
+import { interpretForecast } from "./services/js/interpretData";
 
 // ---------- Multer setup ----------
 //
@@ -132,7 +134,7 @@ async function main() {
 
     execFile(
       "python3",
-      ["services/merge_forecast.py", filePath],
+      ["services/python/merge_forecast.py", filePath],
       { maxBuffer: 1024 * 1024 * 10 }, // 10MB buffer
       async (err, stdout, stderr) => {
         // Supprimer le fichier temporaire
@@ -161,62 +163,32 @@ async function main() {
     );
   });
 
+  app.post("/podcast", express.json(), async (req, res) => {
+    try {
+      const { texte } = req.body;
+      if (!texte) {
+        return res.status(400).json({ error: "Champ 'texte' manquant" });
+      }
+
+      console.log("🎙️ Génération du podcast pour :", texte);
+      const audioPath = await generatePodcastAudio(texte, "podcast");
+
+      res.json({
+        success: true,
+        message: "Podcast généré avec succès 🎧",
+        file: audioPath,
+      });
+    } catch (err) {
+      console.error(err);
+      res
+        .status(500)
+        .json({ error: "Erreur lors de la génération du podcast" });
+    }
+  });
+
   app.listen(3000, () =>
     console.log("🚀 Serveur RAG + prévision sur http://localhost:3000")
   );
-}
-async function interpretForecast(forecastData) {
-  if (!forecastData) return "Aucune donnée fournie.";
-
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY, // Assure-toi que cette variable est bien définie
-  });
-
-  const model = "gemma-3-27b-it";
-
-  // Préparer le contexte textuel
-  const contextText = `
-Prévisions régionales :
-${forecastData.forecast_regional
-  .map(
-    (r) =>
-      `Région: ${r.Région}, Année: ${r.Année}, Budget Santé: ${r.Budget_Santé}, Population: ${r.Population}, Croissance: ${r.Croissance}, Dépenses prévues: ${r.Dépenses_Prédites}`
-  )
-  .join("\n")}
-
-Prévisions nationales :
-${forecastData.forecast_national
-  .map((n) => `Année: ${n.Année}, Dépenses prévues: ${n.Dépenses_Prédites}`)
-  .join("\n")}
-`;
-
-  const contents = [
-    {
-      role: "user",
-      parts: [
-        {
-          text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire pour un responsable de budget.
-
-${contextText}`,
-        },
-      ],
-    },
-  ];
-
-  // Appel au modèle
-  const responseStream = await ai.models.generateContentStream({
-    model,
-    config: {},
-    contents,
-  });
-
-  // Lire le flux et concaténer le texte
-  let interpretation = "";
-  for await (const chunk of responseStream) {
-    if (chunk.text) interpretation += chunk.text;
-  }
-
-  return interpretation;
 }
 
 main();
