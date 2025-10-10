@@ -5,6 +5,7 @@
   "main": "rag-server.js",
   "type": "module",
   "scripts": {
+    "start": "nodemon rag-server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
