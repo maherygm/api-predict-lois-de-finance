@@ -18,8 +18,9 @@ import { RetrievalQAChain } from "langchain/chains";
 import { execFile } from "child_process";
 import fs from "fs";
 import XLSX from "xlsx";
-import { generatePodcastAudio } from "./services/js/podCastGenerator";
-import { interpretForecast } from "./services/js/interpretData";
+
+import { interpretForecast } from "./services/js/interpretData.js";
+import { generatePodcast } from "./services/js/podCastGenerator.js";
 
 // ---------- Multer setup ----------
 //
@@ -110,7 +111,7 @@ async function main() {
   await initRAG();
   const app = express();
   app.use(cors());
-  app.use(bodyParser.json());
+  //app.use(bodyParser.json());
   app.use(express.json());
 
   // RAG endpoint
@@ -205,8 +206,7 @@ async function main() {
         return res.status(400).json({ error: "Champ 'texte' manquant" });
       }
 
-      console.log("🎙️ Génération du podcast pour :", texte);
-      const audioPath = await generatePodcastAudio(texte, "podcast");
+      const audioPath = await generatePodcast(texte, "podcast");
 
       res.json({
         success: true,

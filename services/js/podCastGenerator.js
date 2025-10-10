@@ -1,16 +1,44 @@
-// services/podcastGenerator.js
-import { GoogleGenAI } from "@google/genai";
-import mime from "mime";
+import "dotenv/config";
 import fs from "fs";
 import path from "path";
+import { GoogleGenAI } from "@google/genai";
+import mime from "mime";
 
-/**
- * Convert raw audio data to WAV if needed
- */
-function createWavHeader(
-  dataLength,
-  { numChannels, sampleRate, bitsPerSample }
-) {
+// ---------------- WAV Utilities ----------------
+function saveBinaryFile(filePath, content) {
+  fs.writeFile(filePath, content, (err) => {
+    if (err) return console.error(`Error writing file ${filePath}:`, err);
+    console.log(`File ${filePath} saved.`);
+  });
+}
+
+function convertToWav(rawData, mimeType) {
+  const options = parseMimeType(mimeType);
+  const wavHeader = createWavHeader(rawData.length, options);
+  const buffer = Buffer.from(rawData, "base64");
+  return Buffer.concat([wavHeader, buffer]);
+}
+
+function parseMimeType(mimeType) {
+  const [fileType, ...params] = mimeType.split(";").map((s) => s.trim());
+  const [_, format] = fileType.split("/");
+  const options = { numChannels: 1, sampleRate: 44100, bitsPerSample: 16 };
+
+  if (format && format.startsWith("L")) {
+    const bits = parseInt(format.slice(1), 10);
+    if (!isNaN(bits)) options.bitsPerSample = bits;
+  }
+
+  for (const param of params) {
+    const [key, value] = param.split("=").map((s) => s.trim());
+    if (key === "rate") options.sampleRate = parseInt(value, 10);
+  }
+
+  return options;
+}
+
+function createWavHeader(dataLength, options) {
+  const { numChannels, sampleRate, bitsPerSample } = options;
   const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
   const blockAlign = (numChannels * bitsPerSample) / 8;
   const buffer = Buffer.alloc(44);
@@ -32,91 +60,58 @@ function createWavHeader(
   return buffer;
 }
 
-function parseMimeType(mimeType) {
-  const [fileType, ...params] = mimeType.split(";").map((s) => s.trim());
-  const [_, format] = fileType.split("/");
-
-  const options = { numChannels: 1, sampleRate: 44100, bitsPerSample: 16 };
-
-  for (const param of params) {
-    const [key, value] = param.split("=").map((s) => s.trim());
-    if (key === "rate") options.sampleRate = parseInt(value, 10);
-  }
-
-  return options;
-}
-
-/**
- * Sauvegarde un fichier audio sur le disque
- */
-function saveBinaryFile(fileName, content) {
-  const outputDir = path.resolve("podcasts");
-  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-
-  const filePath = path.join(outputDir, fileName);
-  fs.writeFileSync(filePath, content);
-  console.log(`🎧 Fichier audio sauvegardé : ${filePath}`);
-  return filePath;
-}
-
-/**
- * Fonction principale de génération audio
- */
-export async function generatePodcastAudio(text, filePrefix = "podcast") {
-  try {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-    });
-
-    const config = {
-      temperature: 1,
-      responseModalities: ["audio"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: "Zephyr", // autre voix : "Wave", "Serene", "Astra"...
-          },
-        },
-      },
-    };
-
-    const model = "gemini-2.5-pro-preview-tts";
-    const contents = [
-      {
-        role: "user",
-        parts: [
+// ---------------- Podcast Function ----------------
+export async function generatePodcast(text, outputDir = "podcasts") {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const model = "gemini-2.5-flash-preview-tts";
+  const config = {
+    temperature: 1,
+    responseModalities: ["audio"],
+    speechConfig: {
+      multiSpeakerVoiceConfig: {
+        speakerVoiceConfigs: [
           {
-            text,
+            speaker: "Speaker 1",
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Enceladus" } },
+          },
+          {
+            speaker: "Speaker 2",
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
           },
         ],
       },
-    ];
+    },
+  };
 
-    const response = await ai.models.generateContentStream({
-      model,
-      config,
-      contents,
-    });
+  const contents = [{ role: "user", parts: [{ text }] }];
 
-    let fileIndex = 0;
-    let lastFilePath = null;
+  const response = await ai.models.generateContentStream({
+    model,
+    config,
+    contents,
+  });
 
-    for await (const chunk of response) {
-      const part = chunk?.candidates?.[0]?.content?.parts?.[0];
-      if (part?.inlineData) {
-        const inlineData = part.inlineData;
-        let fileExtension =
-          mime.getExtension(inlineData.mimeType || "") || "wav";
-        const buffer = Buffer.from(inlineData.data || "", "base64");
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-        const fileName = `${filePrefix}-${Date.now()}-${fileIndex++}.${fileExtension}`;
-        lastFilePath = saveBinaryFile(fileName, buffer);
-      }
+  let fileIndex = 0;
+  const files = [];
+
+  for await (const chunk of response) {
+    const inlineData = chunk?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    if (inlineData) {
+      let buffer = Buffer.from(inlineData.data || "", "base64");
+      let fileExt = mime.getExtension(inlineData.mimeType || "") || "wav";
+      if (!mime.getExtension(inlineData.mimeType || ""))
+        buffer = convertToWav(inlineData.data || "", inlineData.mimeType || "");
+
+      const fileName = path.join(
+        outputDir,
+        `podcast_${fileIndex++}.${fileExt}`
+      );
+      saveBinaryFile(fileName, buffer);
+      files.push(fileName);
     }
-
-    return lastFilePath;
-  } catch (error) {
-    console.error("❌ Erreur génération audio :", error);
-    throw error;
   }
+
+  return files;
 }
