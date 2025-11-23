@@ -19,7 +19,10 @@ import { execFile } from "child_process";
 import fs from "fs";
 import XLSX from "xlsx";
 
-import { interpretForecast } from "./services/js/interpretData.js";
+import {
+  interpretForecast,
+  scriptifyForPodcast,
+} from "./services/js/interpretData.js";
 import { generatePodcast } from "./services/js/podCastGenerator.js";
 
 // ---------- Multer setup ----------
@@ -41,7 +44,7 @@ const upload = multer({ storage: STORAGE });
 class LLMFactory {
   static createGemini() {
     return new ChatGoogleGenerativeAI({
-      model: "gemma-3n-e2b-it",
+      model: "gemini-2.0-flash-lite",
       temperature: 0.3,
       apiKey: process.env.GOOGLE_API_KEY,
     });
@@ -113,6 +116,8 @@ async function main() {
   app.use(cors());
   //app.use(bodyParser.json());
   app.use(express.json());
+
+  app.use("/podcast", express.static(path.join(process.cwd(), "podcast")));
 
   // RAG endpoint
   /**
@@ -199,25 +204,44 @@ async function main() {
     );
   });
 
-  app.post("/podcast", express.json(), async (req, res) => {
+  // --- Endpoint Modifié ---
+  app.post("/generatePodcast", express.json(), async (req, res) => {
     try {
       const { texte } = req.body;
       if (!texte) {
         return res.status(400).json({ error: "Champ 'texte' manquant" });
       }
 
-      const audioPath = await generatePodcast(texte, "podcast");
+      // 1. ÉTAPE LLM : Transformer l'analyse brute en script de dialogue balisé
+      console.log(
+        "Étape 1: Transformation de l'analyse en script de dialogue..."
+      );
+      const dialogueScript = await scriptifyForPodcast(texte);
+
+      if (!dialogueScript) {
+        return res
+          .status(500)
+          .json({ error: "Le LLM n'a pas pu générer le script de dialogue." });
+      }
+
+      // 2. ÉTAPE TTS : Générer l'audio à partir du script balisé
+      console.log("Étape 2: Génération du podcast audio à partir du script...");
+
+      // Ici, on appelle votre fonction generatePodcast qui est maintenant à jour
+      // (En supposant que vous ayez mis à jour generatePodcast pour retourner UN seul fichier)
+      const audioPath = await generatePodcast(dialogueScript, "podcast");
 
       res.json({
         success: true,
         message: "Podcast généré avec succès 🎧",
-        file: audioPath,
+        file: path.basename(audioPath), // Retourne uniquement le nom du fichier pour l'URL statique
       });
     } catch (err) {
-      console.error(err);
-      res
-        .status(500)
-        .json({ error: "Erreur lors de la génération du podcast" });
+      console.error("Erreur complète du podcast:", err.message);
+      res.status(500).json({
+        error:
+          "Erreur serveur lors de la génération du podcast: " + err.message,
+      });
     }
   });
 

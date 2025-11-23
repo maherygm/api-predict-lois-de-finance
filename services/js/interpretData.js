@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "@google/genai";
+
 export async function interpretForecast(forecastData) {
   if (!forecastData) return "Aucune donnée fournie.";
 
@@ -5,7 +7,7 @@ export async function interpretForecast(forecastData) {
     apiKey: process.env.GEMINI_API_KEY, // Assure-toi que cette variable est bien définie
   });
 
-  const model = "gemma-3-27b-it";
+  const model = "gemini-2.0-flash-lite";
 
   // Préparer le contexte textuel
 
@@ -25,14 +27,47 @@ ${forecastData.forecast_national
   .join("\n")}
 `;
 
+  function cleanAIResponse(response) {
+    // Supprime les blocs de code ```html``` ou ```
+    return response
+      .replace(/```html/g, "")
+      .replace(/```/g, "")
+      .trim();
+  }
+
   const contents = [
     {
       role: "user",
       parts: [
         {
-          text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire et bref pas trop long pour un responsable de budget.
+          text: `
+              Tu es un expert en finances publiques et un développeur Front-End senior.
+              Ta mission : Analyser les données budgétaires ci-dessous et générer un rapport HTML visuellement impeccable, compact et moderne.
 
-${contextText}`,
+              CONSIGNES TECHNIQUES (Strictes) :
+              1. Format de sortie : Uniquement du code HTML brut. PAS de balises \`\`\`html, pas de markdown, pas de texte avant ou après.
+              2. CSS : Utilise du CSS inline (style="...") pour garantir un rendu parfait lors de l'injection.
+              3. Design :
+                - Style "Dashboard moderne" : Police sans-serif (Inter, Segoe UI, Arial), fond blanc, ombres légères.
+                - Couleurs : Bleu marine (#1e3a8a) pour les titres, Gris foncé (#374151) pour le texte, une touche de vert pour les éléments positifs.
+                - Espacement : COMPACT. Évite les marges inutiles. Utilise 'margin-bottom: 10px' max pour les paragraphes.
+              4. Structure :
+                - Enveloppe tout le contenu dans une <div style="font-family: sans-serif; line-height: 1.5; color: #333; background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb;">.
+                - Titres : <h2> (gras, couleur foncée, marge basse réduite) et <h3> (semi-gras, gris).
+                - Points clés : Utilise une liste <ul> avec des puces stylisées ou des icônes simples.
+
+              CONSIGNES DE CONTENU (Expertise Finance) :
+              - Analyse les tendances : Croissance vs Inflation, disparités régionales, impact démographique.
+              - Ton : Professionnel mais accessible (vulgarisation intelligente).
+              - Structure du texte :
+                1. Synthèse Globale (2 phrases max).
+                2. Analyse Détaillée (Focus Santé & Démographie).
+                3. Recommandations Stratégiques (Liste à puces concrète).
+                4. Conclusion.
+
+              Voici les données à analyser :
+              ${contextText}
+              `,
         },
       ],
     },
@@ -51,5 +86,65 @@ ${contextText}`,
     if (chunk.text) interpretation += chunk.text;
   }
 
-  return interpretation;
+  return cleanAIResponse(interpretation);
+}
+
+// Initialisation de l'API Gemini (à adapter selon votre contexte)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// --- Fonction de Génération de Script (NOUVELLE ÉTAPE) ---
+/**
+ * Convertit un texte d'analyse simple en un script de dialogue pour TTS.
+ * @param {string} analysisText Le texte d'analyse brut.
+ * @returns {Promise<string>} Le script formaté avec des balises <Speaker X>.
+ */
+export async function scriptifyForPodcast(analysisText) {
+  const userQuery = `
+    Transforme l'analyse financière suivante en un script de dialogue dynamique et engageant entre deux analystes: 'Speaker 1' et 'Speaker 2'. 
+    Speaker 1 doit poser les questions générales et introduire les points clés.
+    Speaker 2 doit fournir les données spécifiques, les tendances et les conclusions.
+    Le résultat DOIT être au format suivant, sans introduction ni conclusion supplémentaires, en utilisant uniquement les balises <Speaker X>:
+    <Speaker 1>Bonjour, discutons de...</Speaker 1>
+    <Speaker 2>Absolument, l'analyse montre que...</Speaker 2>
+    
+    ANALYSE À CONVERTIR:
+    ---
+    ${analysisText}
+    ---
+  `;
+
+  // System Instruction pour guider le style
+  const systemPrompt =
+    "Vous êtes un expert en scénarisation audio. Votre tâche est de convertir une analyse en un dialogue structuré, utilisant exclusivement les balises <Speaker 1> et <Speaker 2> pour attribuer la parole.";
+
+  const model = "gemini-2.5-flash-preview-09-2025";
+  const maxRetries = 3;
+  let responseText = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: [{ parts: [{ text: userQuery }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+      });
+
+      responseText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (responseText) return responseText;
+    } catch (error) {
+      console.warn(
+        `Tentative ${attempt + 1} échouée pour LLM Scriptification.`,
+        error.message
+      );
+      if (attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // Backoff exponentiel (1s, 2s, 4s)
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        throw new Error(
+          "Échec de la conversion du texte en script après plusieurs tentatives."
+        );
+      }
+    }
+  }
+  return ""; // Ne devrait pas être atteint
 }

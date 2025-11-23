@@ -59,10 +59,11 @@ function createWavHeader(dataLength, options) {
 
   return buffer;
 }
-
-// ---------------- Podcast Function ----------------
-export async function generatePodcast(text, outputDir = "podcasts") {
+// ---------------- Podcast Function (Fusion & Single File Return) ----------------
+export async function generatePodcast(text, outputDir = "podcast") {
+  // NOTE: L'initialisation de l'IA doit être faite ici ou passée en argument si vous le souhaitez
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
   const model = "gemini-2.5-flash-preview-tts";
   const config = {
     temperature: 1,
@@ -91,27 +92,60 @@ export async function generatePodcast(text, outputDir = "podcasts") {
     contents,
   });
 
+  // Utilisation des versions synchrones de fs, comme dans vos utilitaires
   if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-  let fileIndex = 0;
-  const files = [];
+  let combinedRawData = []; // Stocke les données base64 brutes
+  let mimeType = "";
 
+  // 1. Accumulation des données binaires du stream
   for await (const chunk of response) {
     const inlineData = chunk?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
     if (inlineData) {
-      let buffer = Buffer.from(inlineData.data || "", "base64");
-      let fileExt = mime.getExtension(inlineData.mimeType || "") || "wav";
-      if (!mime.getExtension(inlineData.mimeType || ""))
-        buffer = convertToWav(inlineData.data || "", inlineData.mimeType || "");
+      // Accumuler les données base64
+      combinedRawData.push(inlineData.data || "");
 
-      const fileName = path.join(
-        outputDir,
-        `podcast_${fileIndex++}.${fileExt}`
-      );
-      saveBinaryFile(fileName, buffer);
-      files.push(fileName);
+      // Déterminer le type MIME et l'extension à partir du premier chunk
+      if (!mimeType) {
+        mimeType = inlineData.mimeType || "";
+      }
     }
   }
 
-  return files;
+  // Vérification
+  if (combinedRawData.length === 0) {
+    throw new Error("Aucune donnée audio reçue de l'API.");
+  }
+
+  // 2. Concaténation et conversion
+  const combinedBase64Data = combinedRawData.join("");
+  let finalBuffer;
+  let fileExt;
+
+  if (mime.getExtension(mimeType)) {
+    // Si le type MIME est standard (ex: audio/mpeg), on utilise le buffer direct
+    finalBuffer = Buffer.from(combinedBase64Data, "base64");
+    fileExt = mime.getExtension(mimeType);
+  } else {
+    // Si c'est du PCM brut (ex: audio/L16), on utilise votre fonction de conversion WAV
+    // On utilise une valeur par défaut si le type mime est vide.
+    finalBuffer = convertToWav(
+      combinedBase64Data,
+      mimeType || "audio/L16; rate=24000"
+    );
+    fileExt = "wav"; // Force le .wav après la conversion d'entête
+  }
+
+  // 3. Sauvegarde du fichier unique
+  const fileName = path.join(
+    outputDir,
+    `podcast_0.${fileExt}` // Utilisation de Date.now() pour l'unicité
+  );
+
+  // Utilisation de fs.writeFileSync pour garantir que le fichier est sauvegardé avant le retour
+  fs.writeFileSync(fileName, finalBuffer);
+  console.log(`File ${fileName} saved.`);
+
+  // 4. Retourner le chemin unique (String)
+  return fileName;
 }

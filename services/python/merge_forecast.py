@@ -9,6 +9,8 @@ Fusion des scripts :
 - prophet_budget_national.py
 - merge_forecast.py
 
+MODIFICATION : Prévision étendue sur 10 ans.
+
 Utilisation :
 $ python3 merge_forecast_all_in_one.py data.xlsx
 """
@@ -21,9 +23,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from prophet import Prophet
 
-
 # ============================================================
-# 🔹 1. Forecast Régional (RandomForest)
+# 🔹 1. Forecast Régional (RandomForest) - 10 ANS
 # ============================================================
 def forecast_regional(file_path):
     try:
@@ -47,14 +48,18 @@ def forecast_regional(file_path):
             model = RandomForestRegressor(n_estimators=200, random_state=42)
             model.fit(X_train, y_train)
 
-            # Prévision 3 prochaines années
+            # --- MODIFICATION ICI : Prévision 10 prochaines années ---
             last_year = df["Année"].max()
+            future_range = range(1, 11) # De 1 à 10 ans
+
             next_years = pd.DataFrame({
-                "Année": [last_year + i for i in range(1, 4)],
-                "Budget_Santé": [df["Budget_Santé"].iloc[-1] * (1 + 0.05*i) for i in range(1, 4)],
-                "Population": [df["Population"].iloc[-1] * (1 + 0.015*i) for i in range(1, 4)],
-                "Croissance": [df["Croissance"].iloc[-1]]*3
+                "Année": [last_year + i for i in future_range],
+                # Hypothèse simplifiée : Budget +5%/an, Population +1.5%/an
+                "Budget_Santé": [df["Budget_Santé"].iloc[-1] * (1 + 0.05*i) for i in future_range],
+                "Population": [df["Population"].iloc[-1] * (1 + 0.015*i) for i in future_range],
+                "Croissance": [df["Croissance"].iloc[-1]] * 10 # Répéter la croissance actuelle 10 fois
             })
+            
             next_pred = model.predict(next_years)
             next_years["Dépenses_Prédites"] = next_pred
             next_years["Région"] = region
@@ -68,7 +73,7 @@ def forecast_regional(file_path):
 
 
 # ============================================================
-# 🔹 2. Forecast National (Prophet)
+# 🔹 2. Forecast National (Prophet) - 10 ANS
 # ============================================================
 def forecast_national(file_path):
     try:
@@ -80,10 +85,12 @@ def forecast_national(file_path):
         df["ds"] = pd.to_datetime(df["ds"], format="%Y")
         model.fit(df)
 
-        future = model.make_future_dataframe(periods=3, freq="Y")
+        # --- MODIFICATION ICI : periods=10 ---
+        future = model.make_future_dataframe(periods=10, freq="Y")
         forecast = model.predict(future)
 
-        result = forecast[["ds", "yhat"]].tail(3)
+        # On récupère les 10 dernières lignes (les prévisions)
+        result = forecast[["ds", "yhat"]].tail(10)
         result["ds"] = result["ds"].dt.year
         return result.rename(columns={"ds": "Année", "yhat": "Dépenses_Prédites"}).to_dict(orient="records")
     except Exception as e:
