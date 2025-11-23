@@ -77,7 +77,7 @@ export async function generatePodcast(text, outputDir = "podcast") {
           },
           {
             speaker: "Speaker 2",
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Autonoe" } },
           },
         ],
       },
