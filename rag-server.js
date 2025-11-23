@@ -118,7 +118,7 @@ async function main() {
   app.use(express.json());
 
   app.use("/podcast", express.static(path.join(process.cwd(), "podcast")));
-  app.use(bodyParser.json());
+  // app.use(bodyParser.json());
   app.use(express.json());
 
   // RAG endpoint
@@ -251,58 +251,58 @@ async function main() {
     console.log("🚀 Serveur RAG + prévision sur http://localhost:3000")
   );
 }
-async function interpretForecast(forecastData) {
-  if (!forecastData) return "Aucune donnée fournie.";
+// async function interpretForecast(forecastData) {
+//   if (!forecastData) return "Aucune donnée fournie.";
 
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY, // Assure-toi que cette variable est bien définie
-  });
+//   const ai = new GoogleGenAI({
+//     apiKey: process.env.GEMINI_API_KEY, // Assure-toi que cette variable est bien définie
+//   });
 
-  const model = "gemma-3-27b-it";
+//   const model = "gemma-3-27b-it";
 
-  // Préparer le contexte textuel
-  const contextText = `
-Prévisions régionales :
-${forecastData.forecast_regional
-  .map(
-    (r) =>
-      `Région: ${r.Région}, Année: ${r.Année}, Budget Santé: ${r.Budget_Santé}, Population: ${r.Population}, Croissance: ${r.Croissance}, Dépenses prévues: ${r.Dépenses_Prédites}`
-  )
-  .join("\n")}
+//   // Préparer le contexte textuel
+//   const contextText = `
+// Prévisions régionales :
+// ${forecastData.forecast_regional
+//   .map(
+//     (r) =>
+//       `Région: ${r.Région}, Année: ${r.Année}, Budget Santé: ${r.Budget_Santé}, Population: ${r.Population}, Croissance: ${r.Croissance}, Dépenses prévues: ${r.Dépenses_Prédites}`
+//   )
+//   .join("\n")}
 
-Prévisions nationales :
-${forecastData.forecast_national
-  .map((n) => `Année: ${n.Année}, Dépenses prévues: ${n.Dépenses_Prédites}`)
-  .join("\n")}
-`;
+// Prévisions nationales :
+// ${forecastData.forecast_national
+//   .map((n) => `Année: ${n.Année}, Dépenses prévues: ${n.Dépenses_Prédites}`)
+//   .join("\n")}
+// `;
 
-  const contents = [
-    {
-      role: "user",
-      parts: [
-        {
-          text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire pour un responsable de budget.
+//   const contents = [
+//     {
+//       role: "user",
+//       parts: [
+//         {
+//           text: `Tu es un expert en finances publiques. Analyse les prévisions ci-dessus et rédige une interprétation claire pour un responsable de budget.
 
-${contextText}`,
-        },
-      ],
-    },
-  ];
+// ${contextText}`,
+//         },
+//       ],
+//     },
+//   ];
 
-  // Appel au modèle
-  const responseStream = await ai.models.generateContentStream({
-    model,
-    config: {},
-    contents,
-  });
+//   // Appel au modèle
+//   const responseStream = await ai.models.generateContentStream({
+//     model,
+//     config: {},
+//     contents,
+//   });
 
-  // Lire le flux et concaténer le texte
-  let interpretation = "";
-  for await (const chunk of responseStream) {
-    if (chunk.text) interpretation += chunk.text;
-  }
+//   // Lire le flux et concaténer le texte
+//   let interpretation = "";
+//   for await (const chunk of responseStream) {
+//     if (chunk.text) interpretation += chunk.text;
+//   }
 
-  return interpretation;
-}
+//   return interpretation;
+// }
 
 main();
