@@ -21,6 +21,7 @@ import XLSX from "xlsx";
 
 import {
   interpretForecast,
+  interpretForecastGroq,
   scriptifyForPodcast,
 } from "./services/js/interpretData.js";
 import { generatePodcast } from "./services/js/podCastGenerator.js";
@@ -190,7 +191,9 @@ async function main() {
         try {
           const data = JSON.parse(stdout);
           // 🔹 Appel LLM pour interprétation
-          const interpretation = await interpretForecast(data);
+          // const interpretation = await interpretForecast(data);
+
+          const interpretation = await interpretForecastGroq(data);
 
           // 🔹 Retourne les prévisions + l’interprétation
           res.json({
